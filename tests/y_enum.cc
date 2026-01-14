@@ -4,18 +4,15 @@
 
 y_make_enum(LightsView, u32, Simplified, Detailed);
 
-// =========================================================
-// 5. Test
-// =========================================================
 int main() {
     // Test Iteration
-    y_println("--- Iteration ---");
+    y_println("\n--- Iteration ---\n");
     for (auto v : e_LightsViewAll()) {
-        y_println(e_LightsViewToString(v));
+        y_println("{}", e_LightsViewToString(v));
     }
 
     // Test Resolution
-    y_println("--- Resolution ---");
+    y_println("\n--- Resolution ---\n");
     auto v = e_LightsViewFromString("Complex");
     y_println("Found: {}", e_LightsViewToIndex(v));
 
