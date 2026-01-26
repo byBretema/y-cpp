@@ -22,6 +22,8 @@ PROCESS_CB: Callable | None = None
 PROCESS_TH: int = 10
 PROCESS_FILEPATH: str | None = None
 SHOW_TRACEBACK: bool = False
+SHOW_TRACEBACK_ENTRYPOINT: bool = False
+REQUIRED_VERBOSE: bool = False
 MAX_WIDTH: int = 80
 
 
@@ -109,12 +111,16 @@ def log_error(msg: str, exception=None):
     _log_error(msg, exception, abort=False)
 
 
-def log_info(msg: str, prefix="· "):
-    tee(f"{prefix}{msg}\n")
+def log_info(msg: str, prefix="· ", ln="\n"):
+    tee(f"{prefix}{msg}{ln}")
 
 
 def println(msg: str = ""):
     log_info(msg, "")
+
+
+def print(msg: str = ""):
+    log_info(msg, "", "")
 
 
 def fill_str(ref: str, sep: str, **kwargs):
@@ -141,50 +147,29 @@ def println_fill(ref: str, sep: str, **kwargs):
     println(fill_str(ref, sep, **kwargs))
 
 
-class FancyAlign(enum.Enum):
-    Left = enum.auto()
-    Center = enum.auto()
-    Right = enum.auto()
+def print_fill(ref: str, sep: str, **kwargs):
+    print(fill_str(ref, sep, **kwargs))
 
 
-def log_fancy(
-    title: str | None,
-    pre_ln: int = 0,
-    post_ln: int = 0,
-    align: FancyAlign = FancyAlign.Center,
-    sep: str = "-",
-    margin: int = 3,
-):
+def h1(msg, ln=True):
+    print("\n\n")
+    print_fill("┌{s}┐" "\n", "─")
+    print_fill("•{s}{t}{s}•" "\n", " ", t=(msg.upper()))
+    print_fill("└{s}┘" "\n", "─")
+    print("\n" * ln if ln > 0 else "")
 
-    template = "· {sl}{t}{sr} ·"
-    title = f" {title} " if title else ""
+def h2(msg, ln=True):
+    # print("\n\n")
+    global MAX_WIDTH
+    prev_max_width = MAX_WIDTH
+    MAX_WIDTH = prev_max_width // 3
 
-    deco = sep * margin
-
-    template_with_title = template.format(sl="", t=title, sr="")
-    n_sep = max(MAX_WIDTH - emoji_str_len(template_with_title), 0)
-
-    sep_l = ""
-    sep_r = ""
-    if align == FancyAlign.Center:
-        n_sep = n_sep // 2
-        sep_l = sep * (n_sep + int(n_sep % 2 == 0))
-        sep_r = sep * (n_sep)
-    elif align == FancyAlign.Right:
-        sep_l = sep * (n_sep - emoji_str_len(deco))
-        sep_r = deco
-    elif align == FancyAlign.Left:
-        sep_l = deco
-        sep_r = sep * (n_sep - emoji_str_len(deco))
-
-    if pre_ln > 0:
-        print(f"{'\n'*pre_ln}", end="")
-
-    print(template.format(sl=sep_l, t=title, sr=sep_r))
-
-    if post_ln > 0:
-        print(f"{'\n'*post_ln}", end="")
-
+    print_fill("  ┌{s}┐" "\n", "─")
+    print_fill("---{s}{t}{s}|" "\n", " ", t=(msg.upper()))
+    print_fill("  └{s}┘" "\n", "─")
+    print("\n" * ln if ln > 0 else "")
+    
+    MAX_WIDTH = prev_max_width
 
 # - - - - - - - - - - - - - - -  Run Command - - - - - - - - - - - - - - - - - #
 
@@ -251,24 +236,30 @@ def run_cmd(
 # - - - - - - - - - - - - - - - - Required - - - - - - - - - - - - - - - - - - #
 
 
-def _required_base(item: str, cb: Callable[[str], bool | str | None], type: str, info: str = "", silent: bool = False):
+def _required_base(
+    item: str,
+    cb: Callable[[str], bool | str | None],
+    type: str,
+    info: str = "",
+    verbose: bool = False,
+):
     info = f" {info}" if info else ""
     if not cb(item):
         error_exit(f"{type.capitalize()} '{item}' is required.{info}")
-    if not silent:
+    if verbose:
         log_info(f"Found: {item}")
 
 
-def required_command(cmd: str, info: str = "", silent: bool = False):
-    _required_base(cmd, shutil.which, "Command", info, silent)
+def required_command(cmd: str, info: str = "", verbose: bool = REQUIRED_VERBOSE):
+    _required_base(cmd, shutil.which, "Command", info, verbose)
 
 
-def required_file(path: str, info: str = "", silent: bool = False):
-    _required_base(path, os.path.isfile, "File", info, silent)
+def required_file(path: str, info: str = "", verbose: bool = REQUIRED_VERBOSE):
+    _required_base(path, os.path.isfile, "File", info, verbose)
 
 
-def required_folder(path: str, info: str = "", silent: bool = False):
-    _required_base(path, os.path.isdir, "Folder", info, silent)
+def required_folder(path: str, info: str = "", verbose: bool = REQUIRED_VERBOSE):
+    _required_base(path, os.path.isdir, "Folder", info, verbose)
 
 
 # - - - - - - - - - - - - - - -  Conversions - - - - - - - - - - - - - - - - - #
@@ -557,10 +548,13 @@ def entrypoint(main: Callable, *args):
         _init1()
         main(*args)
     except KeyboardInterrupt:
+        _before_exit()
         error_exit("User interrupts execution.")
     except PermissionError as e:
+        _before_exit()
         error_exit("Some files are in use, execution blocked", e)
     except Exception as e:
+        _before_exit()
         error_exit("Unexpected", e)
 
 
@@ -579,6 +573,11 @@ def _init2():
         __GLOBAL_TEE_WITH_CALLBACK = tee_make(None, 1, TRACE_CB)
 
 
+def _before_exit():
+    global SHOW_TRACEBACK
+    SHOW_TRACEBACK = SHOW_TRACEBACK_ENTRYPOINT
+
+
 def setup(
     exit_cb: Callable | None = None,
     trace_cb: Callable | None = None,
@@ -586,6 +585,8 @@ def setup(
     process_th: int = 10,
     process_filepath: str | None = None,
     show_traceback: bool = False,
+    show_traceback_entrypoint: bool = False,
+    required_verbose: bool = False,
     max_width: int = 80,
 ):
 
@@ -602,6 +603,12 @@ def setup(
 
     global SHOW_TRACEBACK
     SHOW_TRACEBACK = show_traceback
+
+    global SHOW_TRACEBACK_ENTRYPOINT
+    SHOW_TRACEBACK_ENTRYPOINT = show_traceback_entrypoint
+
+    global REQUIRED_VERBOSE
+    REQUIRED_VERBOSE = required_verbose
 
     global MAX_WIDTH
     MAX_WIDTH = max_width

@@ -282,6 +282,11 @@ endfunction()
 
 function(y_enable_tests)
 
+    if(NOT Y_BUID_TESTS)
+        return()
+    endif()
+
+
     message(STATUS "[y] · Enabling tests")
 
     enable_testing()
