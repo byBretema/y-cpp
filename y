@@ -81,17 +81,24 @@ def tests():
                 external=True,
             )
 
-            y.h2(filename)
+            down_char = "-" if not p.stdout else "  ⌄  "
+            y.print_fill("┌{s}┐" "\n", "─")
+            y.print_fill("| {m} {s} |" "\n", " ", m=filename.upper())
+            y.print_fill("• {s}{m}{s} •" "\n", "-", m=down_char)
+            # y.print_fill("|{s}|" "\n", " ")
+            # y.h2(filename, ln=False)
 
             if p.stdout:
-                # y.println_fill("··· {m1} {s}", "·", m1=filename)
-                # y.println()
-                y.println(p.stdout)
+                y.println("")
+                y.println(p.stdout.strip('\n'))
+                y.println("")
+                y.print_fill("•{s}{m}{s}•" "\n", "-", m="  ⌃  ")
 
             ok: bool = not p.returncode
-            status: str = "PASS 🟢" if ok else "FAIL 🔴"
+            status: str = "PASSED 🟢" if ok else "FAILED 🔴"
             # y.println_fill("··· {m1} {s} {m2}", "·", m1=filename, m2=f"{status}")
-            y.println(f"{status}")
+            y.print_fill("| Test of {m} {s} |" "\n", " ", m=f"{filename.upper()} has {status}")
+            y.print_fill("└{s}┘" "\n", "─")
 
             tests_passed += int(ok)
 

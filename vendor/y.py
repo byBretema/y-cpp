@@ -158,18 +158,20 @@ def h1(msg, ln=True):
     print_fill("└{s}┘" "\n", "─")
     print("\n" * ln if ln > 0 else "")
 
+
 def h2(msg, ln=True):
     # print("\n\n")
     global MAX_WIDTH
     prev_max_width = MAX_WIDTH
     MAX_WIDTH = prev_max_width // 3
 
-    print_fill("  ┌{s}┐" "\n", "─")
-    print_fill("---{s}{t}{s}|" "\n", " ", t=(msg.upper()))
-    print_fill("  └{s}┘" "\n", "─")
+    print_fill("┌{s}┐" "\n", " ")
+    print_fill("  {s}  {t}  {s}  " "\n", "·", t=(msg.upper()))
+    print_fill("└{s}┘" "\n", " ")
     print("\n" * ln if ln > 0 else "")
-    
+
     MAX_WIDTH = prev_max_width
+
 
 # - - - - - - - - - - - - - - -  Run Command - - - - - - - - - - - - - - - - - #
 
