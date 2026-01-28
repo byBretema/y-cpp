@@ -29,7 +29,7 @@ def build(build_type, generator, cwd, build_tests):
         "../..",
         f"-DCMAKE_BUILD_TYPE={build_type}",
         "-DCMAKE_POLICY_VERSION_MINIMUM=3.10",
-        f"-DY_BUID_TESTS={"ON" if build_tests else "OFF"}",
+        f"-DY_BUILD_TESTS={"ON" if build_tests else "OFF"}",
     ]
     y.run_cmd(config_cmd, cwd=cwd)
 

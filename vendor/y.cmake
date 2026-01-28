@@ -282,7 +282,7 @@ endfunction()
 
 function(y_enable_tests)
 
-    if(NOT Y_BUID_TESTS)
+    if(NOT Y_BUILD_TESTS)
         return()
     endif()
 
