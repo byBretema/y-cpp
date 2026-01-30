@@ -113,11 +113,11 @@ def tests():
 
 def main():
 
-    # - Setup ------------------------------------------------------------------
+    #! Setup
 
     y.setup(show_traceback=True)
 
-    # - Args -------------------------------------------------------------------
+    #! Args
 
     parser = argparse.ArgumentParser(description="Build script")
 
@@ -131,20 +131,20 @@ def main():
 
     args = parser.parse_args()
 
-    # - Vars -------------------------------------------------------------------
+    #! Vars
 
     build_type: str = "Release" if not args.debug else "Debug"
     sub_build_dir: str = f"{BUILD_DIR}/sub-build"
     generator: str = args.generator
 
-    # - Required ---------------------------------------------------------------
+    #! Required
 
     y.required_command("cmake")
 
     if generator == "Ninja":
         y.required_command("ninja")
 
-    # - Cleanup ----------------------------------------------------------------
+    #! Cleanup
 
     if args.fresh and os.path.isdir(BUILD_DIR):
         shutil.rmtree(BUILD_DIR)
@@ -154,12 +154,12 @@ def main():
         shutil.rmtree(sub_build_dir)
     os.makedirs(sub_build_dir, exist_ok=True)
 
-    # - Cmake ------------------------------------------------------------------
+    #! Cmake
 
     if args.build:
         build(build_type, generator, cwd=sub_build_dir, build_tests=args.tests)
 
-    # - Tests ------------------------------------------------------------------
+    #! Tests
 
     if args.tests:
         tests()
