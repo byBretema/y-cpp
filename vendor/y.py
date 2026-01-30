@@ -12,6 +12,7 @@ import traceback
 from collections import namedtuple
 import enum
 import unicodedata
+from contextlib import contextmanager
 
 
 # - - - - - - - - - - - - - - - -  Globals - - - - - - - - - - - - - - - - - - #
@@ -124,6 +125,8 @@ def print(msg: str = ""):
 
 
 def fill_str(ref: str, sep: str, **kwargs):
+    sep = sep if len(sep) > 0 else " "
+
     kwargs["s"] = ""
     intermediate_str = ref.format(**kwargs)
 
@@ -153,25 +156,21 @@ def print_fill(ref: str, sep: str, **kwargs):
 
 def h1(msg, ln=True):
     print("\n\n")
-    print_fill("┌{s}┐" "\n", "─")
-    print_fill("•{s}{t}{s}•" "\n", " ", t=(msg.upper()))
-    print_fill("└{s}┘" "\n", "─")
+    print_fill("┏{s}┓" "\n", "━")
+    print_fill("{d} {s} {m} {s} {d}" "\n", "·", m=(msg.upper()), d="┃")
+    print_fill("┗{s}┛" "\n", "━")
     print("\n" * ln if ln > 0 else "")
 
 
-def h2(msg, ln=True):
-    # print("\n\n")
+@contextmanager
+def temp_width(width):
     global MAX_WIDTH
     prev_max_width = MAX_WIDTH
-    MAX_WIDTH = prev_max_width // 3
-
-    print_fill("┌{s}┐" "\n", " ")
-    print_fill("  {s}  {t}  {s}  " "\n", "·", t=(msg.upper()))
-    print_fill("└{s}┘" "\n", " ")
-    print("\n" * ln if ln > 0 else "")
-
-    MAX_WIDTH = prev_max_width
-
+    MAX_WIDTH = width
+    try:
+        yield
+    finally:
+        MAX_WIDTH = prev_max_width
 
 # - - - - - - - - - - - - - - -  Run Command - - - - - - - - - - - - - - - - - #
 

@@ -80,27 +80,25 @@ def tests():
                 permissive=True,
                 external=True,
             )
-
-            down_char = "-" if not p.stdout else "  ⌄  "
-            y.print_fill("┌{s}┐" "\n", "─")
-            y.print_fill("| {m} {s} |" "\n", " ", m=filename.upper())
-            y.print_fill("• {s}{m}{s} •" "\n", "-", m=down_char)
-            # y.print_fill("|{s}|" "\n", " ")
-            # y.h2(filename, ln=False)
-
-            if p.stdout:
-                y.println("")
-                y.println(p.stdout.strip('\n'))
-                y.println("")
-                y.print_fill("•{s}{m}{s}•" "\n", "-", m="  ⌃  ")
-
             ok: bool = not p.returncode
             status: str = "PASSED 🟢" if ok else "FAILED 🔴"
-            # y.println_fill("··· {m1} {s} {m2}", "·", m1=filename, m2=f"{status}")
-            y.print_fill("| Test of {m} {s} |" "\n", " ", m=f"{filename.upper()} has {status}")
-            y.print_fill("└{s}┘" "\n", "─")
 
-            tests_passed += int(ok)
+            with y.temp_width(60):
+                y.println(f"┌── • {filename.upper()} •")
+
+                if p.stdout:
+                    #... Raw to file
+                    with open(f"{root}/log__{filename}.txt", "w") as file:
+                        file.write(p.stdout)
+                    #... Beautify to console
+                    y.println("│  ")
+                    for line in p.stdout.strip('\n').split("\n"):
+                        y.println(f"│  {line}")
+
+                y.println("│  ")
+                y.print_fill("└{s}▸ {m}" "\n", "─", m=status)
+
+                tests_passed += int(ok)
 
     status: str = "PASS ✅️" if (tests_passed == tests_total) else "FAIL ⛔️"
 
@@ -126,9 +124,9 @@ def main():
     parser.add_argument("-t", "--tests", action="store_true", help="Run project tests")
     parser.add_argument("-b", "--build", action="store_true", help="Run config/build step")
     parser.add_argument("-c", "--clean", action="store_true", help="Cleanup sub-build directory")
-    parser.add_argument("-C", "--fresh", action="store_true", help="Cleanup build directory")
+    parser.add_argument("-f", "--fresh", action="store_true", help="Cleanup build directory")
 
-    parser.add_argument("--debug", action="store_true", help="Build in Debug mode")
+    parser.add_argument("-d", "--debug", action="store_true", help="Build in Debug mode")
     parser.add_argument("-g", "--generator", type=str, default="Ninja", help="CMake generator")
 
     args = parser.parse_args()
