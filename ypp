@@ -1,0 +1,248 @@
+#!/usr/bin/env python
+
+import os
+import shutil
+import argparse
+import re
+
+import vendor.y as y
+
+################################################################################
+### Globals
+################################################################################
+
+BUILD_DIR: str = "build"
+TESTS_DIR: str = "tests"
+
+CMAKE_DEPS: str = "y_meta_libs"
+
+
+################################################################################
+### Utils
+################################################################################
+
+
+def cmake_user_targets(cwd: str) -> list[str]:
+    p: y.RunCmdInfo = y.run_cmd(
+        ["cmake", "--build", cwd, "--target", "help"],
+        verbosity=0,
+        permissive=True,
+    )
+    if p.returncode:
+        return []
+
+    # Extract y.cmake dependencies from CMake cache
+    cache_file = os.path.join(cwd, "CMakeCache.txt")
+    deps: set[str] = set()
+
+    if not os.path.exists(cache_file):
+        return []
+
+    with open(cache_file, "r") as f:
+        match = re.search(f"{CMAKE_DEPS}:(.*)=(.+)", f.read(), re.IGNORECASE)
+        deps = {lib for lib in match.group(2).strip().split(" ")} if match else set()
+
+    targets: list[str] = []
+    meta_targets = {"clean", "help", "rebuild_cache", "edit_cache", "package", "package_source", "build.ninja"}
+    for line in p.stdout.splitlines():
+        if ":" not in line:
+            continue
+
+        name, _ = line.split(":", 1)
+        name = name.strip()
+
+        if name in targets:
+            continue
+
+        # Skip meta-targets
+        if not name or "/" in name or name in meta_targets:
+            continue
+
+        # Skip y.cmake dependencies
+        name_lower = name.lower()
+        if any(dep.lower() in name_lower or name_lower in dep.lower() for dep in deps):
+            continue
+
+        targets.append(name)
+
+    return targets
+
+
+################################################################################
+### Config
+################################################################################
+
+
+def config(cwd: str, build_type: str, generator: str, build_tests: bool):
+    y.print_header("CONFIG")
+
+    y.run_cmd(
+        [
+            "cmake",
+            "-G",
+            generator,
+            "../..",
+            f"-DCMAKE_BUILD_TYPE={build_type}",
+            "-DCMAKE_POLICY_VERSION_MINIMUM=3.10",
+            f"-DY_BUILD_TESTS={"ON" if build_tests else "OFF"}",
+        ],
+        cwd=cwd,
+    )
+
+
+################################################################################
+### Build
+################################################################################
+
+
+def build(cwd: str, build_type: str, interactive: bool):
+
+    y.print_header("BUILD")
+
+    target = []
+    if interactive:
+        options = ["all", *cmake_user_targets(cwd)]
+        choice = y.menu(options, "Choose target to build", prompt="Build", starts_at=0)
+
+        if not choice:
+            y.error_exit("Invalid target to build")
+
+        target = ["--target", choice]
+
+        return
+
+    y.run_cmd(["cmake", "--build", ".", "-j", str(os.cpu_count()), "--config", build_type, *target], cwd=cwd)
+
+
+################################################################################
+### Tests
+################################################################################
+
+
+def tests():
+    y.print_header("TESTs", post="")
+
+    tests_dir: str = os.path.abspath(f"{BUILD_DIR}/tests")
+
+    if not os.path.isdir(tests_dir):
+        y.log_error(f"Dir '{tests_dir}' not found. Tests not executed.")
+
+    tests_total: int = 0
+    tests_passed: int = 0
+
+    for root, _, files in os.walk(tests_dir):
+        for filename in files:
+            filepath: str = os.path.join(root, filename)
+
+            if not y.file_is_binary(filepath):
+                continue
+
+            y.println()
+
+            tests_total += 1
+            p: y.RunCmdInfo = y.run_cmd(
+                [filepath],
+                verbosity=0,
+                permissive=True,
+                external=True,
+            )
+            ok: bool = not p.returncode
+            status: str = "PASSED 🟢" if ok else "FAILED 🔴"
+
+            with y.temp_width(60):
+                y.println(f"┌── • {filename.upper()} •")
+
+                if p.stdout:
+                    # ... Raw to file
+                    with open(f"{root}/log__{filename}.txt", "w") as file:
+                        file.write(p.stdout)
+                    # ... Beautify to console
+                    y.println("│  ")
+                    for line in p.stdout.strip("\n").split("\n"):
+                        y.println(f"│  {line}")
+
+                y.println("│  ")
+                y.print_fill("└{s}▸ {m}" "\n", "─", m=status)
+
+                tests_passed += int(ok)
+
+    status: str = "PASS ✅️" if (tests_passed == tests_total) else "FAIL ⛔️"
+
+    y.println()
+    y.log_info(f"Passed tests ({tests_passed}/{tests_total}) ❱ {status}")
+
+
+################################################################################
+### Main
+################################################################################
+
+
+def main():
+
+    #! Setup
+
+    y.setup(show_traceback=True)
+
+    #! Args
+
+    parser = argparse.ArgumentParser(description="Build script")
+
+    # Common options
+    parser.add_argument("-c", "--clean", action="store_true", help="Cleanup sub-build directory")
+    parser.add_argument("-f", "--fresh", action="store_true", help="Cleanup build directory")
+    parser.add_argument("-d", "--debug", action="store_true", help="Build in Debug mode")
+    parser.add_argument("-g", "--generator", type=str, default="Ninja", help="CMake generator")
+
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    # build subparser
+    build_parser = subparsers.add_parser("build", help="Run config/build step")
+    build_parser.add_argument("-t", "--tests", action="store_true", help="Build project tests")
+    build_parser.add_argument("-i", "--interactive", action="store_true", help="Let you choose what to build")
+
+    # test subparser
+    test_parser = subparsers.add_parser("test", help="Run project tests")
+    # no extra flags for now, but kept for symmetry / future use
+
+    args = parser.parse_args()
+
+    #! Vars
+
+    build_type: str = "Release" if not args.debug else "Debug"
+    sub_build_dir: str = f"{y.script_path()}/{BUILD_DIR}/sub-build"
+    generator: str = args.generator
+
+    #! Required
+
+    y.required_command("cmake")
+
+    if generator == "Ninja":
+        y.required_command("ninja")
+
+    #! Cleanup
+
+    if args.fresh and os.path.isdir(BUILD_DIR):
+        shutil.rmtree(BUILD_DIR)
+    os.makedirs(BUILD_DIR, exist_ok=True)
+
+    if args.clean and os.path.isdir(sub_build_dir):
+        shutil.rmtree(sub_build_dir)
+    os.makedirs(sub_build_dir, exist_ok=True)
+
+    #! Cmake / Tests
+
+    if args.command == "build" or args.command == "test":
+        config(sub_build_dir, build_type, generator, build_tests=args.tests)
+
+    if args.command == "build":
+        build(sub_build_dir, build_type, args.interactive)
+
+    if args.command == "test":
+        tests()
+
+
+################################################################################
+### Entry Point
+################################################################################
+
+y.entrypoint(main)

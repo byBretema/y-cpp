@@ -13,9 +13,11 @@ from collections import namedtuple
 import enum
 import unicodedata
 from contextlib import contextmanager
+from dataclasses import dataclass
 
-
-# - - - - - - - - - - - - - - - -  Globals - - - - - - - - - - - - - - - - - - #
+################################################################################
+### Globals
+################################################################################
 
 EXIT_CB: Callable | None = None
 TRACE_CB: Callable | None = None
@@ -28,7 +30,9 @@ REQUIRED_VERBOSE: bool = False
 MAX_WIDTH: int = 80
 
 
-# - - - - - - - - - - - - - - - - - Logger - - - - - - - - - - - - - - - - - - #
+################################################################################
+### Logger
+################################################################################
 
 __GLOBAL_TEE: Generator[None, str, None] | None = None
 __GLOBAL_TEE_WITH_CALLBACK: Generator[None, str, None] | None = None
@@ -84,7 +88,7 @@ def tee_make(
     return t
 
 
-def _log_error(message: str, exception=None, abort: bool = True) -> None | NoReturn:
+def _log_error(message: str, exception=None) -> None | NoReturn:
 
     exception_err = f" | {type(exception)}\n{str(exception)}" if exception else ""
     err = f"\n\n@ ERROR | {message}{exception_err}\n"
@@ -98,18 +102,16 @@ def _log_error(message: str, exception=None, abort: bool = True) -> None | NoRet
         tee(f"\n{traceback.format_exc()}")
 
     tee("")
-    if abort:
-        sys.exit(1)
-    else:
-        tee("- - - - - Execution will continue below - - - - -\n")
 
 
-def error_exit(msg: str, exception=None):
-    _log_error(msg, exception, abort=True)
+def error_exit(msg: str, exception=None) -> NoReturn:
+    _log_error(msg, exception)
+    sys.exit(1)
 
 
 def log_error(msg: str, exception=None):
-    _log_error(msg, exception, abort=False)
+    _log_error(msg, exception)
+    tee("- - - - - Execution will continue below - - - - -\n")
 
 
 def log_info(msg: str, prefix="· ", ln="\n"):
@@ -154,12 +156,55 @@ def print_fill(ref: str, sep: str, **kwargs):
     print(fill_str(ref, sep, **kwargs))
 
 
-def h1(msg, ln=True):
-    print("\n\n")
-    print_fill("┏{s}┓" "\n", "━")
-    print_fill("{d} {s} {m} {s} {d}" "\n", "·", m=(msg.upper()), d="┃")
-    print_fill("┗{s}┛" "\n", "━")
-    print("\n" * ln if ln > 0 else "")
+class BoxStyle(enum.Enum):
+    Light = enum.auto()
+    Bold = enum.auto()
+    Double = enum.auto()
+    Rounded = enum.auto()
+    Ascii = enum.auto()
+
+
+@dataclass
+class BoxTheme:
+    tl: str  # Top Left
+    tr: str  # Top Right
+    h: str  # Horizontal
+    v: str  # Vertical
+    bl: str  # Bottom Left
+    br: str  # Bottom Right
+    junc: str  # Junction (Tree middle)
+    term: str  # Terminator (Tree end)
+
+    @classmethod
+    def get(cls, style: BoxStyle):
+        # fmt: off
+        themes = {
+            BoxStyle.Light:   cls("┌", "┐", "─", "│", "└", "┘", "├", "└"),
+            BoxStyle.Bold:    cls("┏", "┓", "━", "┃", "┗", "┛", "┣", "┗"),
+            BoxStyle.Double:  cls("╔", "╗", "═", "║", "╚", "╝", "╠", "╚"),
+            BoxStyle.Rounded: cls("╭", "╮", "─", "│", "╰", "╯", "├", "╰"),
+            BoxStyle.Ascii:   cls("·", "·", "-", "|", "·", "·", "·", "L"),
+        }
+        # fmt: on
+        return themes[style]
+
+
+def print_header(
+    msg,
+    pre: str = "\n\n",
+    post: str = "\n",
+    is_tree: bool = False,
+    fill_char="·",
+    box: BoxTheme = BoxTheme.get(BoxStyle.Bold),
+):
+    bl = box.junc if is_tree else box.bl
+    fill_char = fill_char if len(fill_char) else " "
+
+    print(pre)
+    print_fill("{tl}{s}{tr}" "\n", box.h, tl=box.tl, tr=box.tr)
+    print_fill("{ml} {s} {m} {s} {mr}" "\n", fill_char, m=(msg.upper()), ml=box.v, mr=box.v)
+    print_fill("{bl}{s}{br}" "\n", box.h, bl=bl, br=box.br)
+    print(post)
 
 
 @contextmanager
@@ -172,13 +217,19 @@ def temp_width(width):
     finally:
         MAX_WIDTH = prev_max_width
 
-# - - - - - - - - - - - - - - -  Run Command - - - - - - - - - - - - - - - - - #
+
+################################################################################
+### Run command
+################################################################################
 
 
 class RunCmdInfo:
     def __init__(self, returncode: int = -1, stdout: str = ""):
         self.returncode: int = returncode
         self.stdout: str = stdout
+
+    def safe_stdout(self):
+        return self.stdout.strip() if not self.returncode else None
 
 
 def run_cmd(
@@ -234,7 +285,97 @@ def run_cmd(
     return RunCmdInfo(returncode=returncode, stdout=stdout)
 
 
-# - - - - - - - - - - - - - - - - Required - - - - - - - - - - - - - - - - - - #
+################################################################################
+### Interactive
+################################################################################
+
+
+def get_chars(max_digits=2) -> str:
+    result = ""
+
+    def get_one_char():
+        if sys.platform == "win32":
+            import msvcrt
+
+            return msvcrt.getche().decode("utf-8")
+        else:
+            import tty, termios
+
+            fd = sys.stdin.fileno()
+            prev_settings = termios.tcgetattr(fd)
+            try:
+                tty.setraw(fd)
+                char = sys.stdin.read(1)
+            finally:
+                termios.tcsetattr(fd, termios.TCSADRAIN, prev_settings)
+            return char
+
+    while len(result) < max_digits:
+        char = get_one_char()
+
+        if char in ("q"):
+            result = ""
+            break
+
+        if char in ("\r", "\n"):
+            break
+
+        if char.isdigit():
+            result += char
+            sys.stdout.write(char)
+            sys.stdout.flush()
+
+    return result
+
+
+def menu(
+    options: list[str],
+    header: str = "Choose one",
+    prompt: str = "Option:",
+    starts_at=1,
+) -> str | None:
+
+    if not options:
+        return None
+
+    #! Handy menu
+
+    if shutil.which("fzf"):
+        s = "\n".join(options)
+        p = subprocess.run(["fzf"], input=s, check=False, stdout=subprocess.PIPE, text=True)
+        return p.stdout.strip() if not p.returncode else None
+
+    #! Classic menu
+
+    box = BoxTheme.get(BoxStyle.Rounded)
+    with temp_width(len(header) + 8):
+        print_header(header.capitalize(), pre="", post="", is_tree=True, box=box)
+
+    for i, t in enumerate(options, starts_at):
+        println(f"{box.junc}{box.h} {i} {box.v} {t}")
+    println(f"{box.v} ")
+
+    try:
+        print(f"{box.term}{box.h} {prompt.capitalize()}: ")
+        max_digits = len(str(len(options)))
+        choice = get_chars(max_digits).strip()
+        if not choice:
+            println()
+            return None
+
+        if choice.isdigit():
+            idx = int(choice) - starts_at
+            if 0 <= idx < len(options):
+                return options[idx]
+
+    except (EOFError, KeyboardInterrupt, ValueError):
+        println()
+        return None
+
+
+################################################################################
+### Required
+################################################################################
 
 
 def _required_base(
@@ -263,7 +404,9 @@ def required_folder(path: str, info: str = "", verbose: bool = REQUIRED_VERBOSE)
     _required_base(path, os.path.isdir, "Folder", info, verbose)
 
 
-# - - - - - - - - - - - - - - -  Conversions - - - - - - - - - - - - - - - - - #
+################################################################################
+### Conversions
+################################################################################
 
 
 def to_int(s: str, fallback: int):
@@ -280,19 +423,30 @@ def to_bool(v):
         return bool(v)
 
 
-# - - - - - - - - - - - - - - - -  Env Utils - - - - - - - - - - - - - - - - - #
+################################################################################
+### Env Utils
+################################################################################
 
 
 def env_path_add(to_add: list[str] | str):
-    if isinstance(to_add, str):
-        to_add_list = [to_add]
-    else:
-        to_add_list = to_add
+    to_add = [to_add] if isinstance(to_add, str) else to_add
     prev_path = [os.environ.get("PATH", "")]
-    os.environ["PATH"] = os.pathsep.join(to_add_list + prev_path)
+    os.environ["PATH"] = os.pathsep.join(to_add + prev_path)
 
 
-# - - - - - - - - - - - - - - - - File Utils - - - - - - - - - - - - - - - - - #
+def script_path():
+    """
+    returns the script path for the callee script
+    """
+    # try:
+    #     return os.path.abspath(os.path.dirname(__file__))
+    # except Exception as e:
+    return os.path.abspath(os.path.dirname(sys.argv[0]))
+
+
+################################################################################
+### File Utils
+################################################################################
 
 
 def file_is_binary(file_path, chunk_size=1024, null_byte_threshold=0.1):
@@ -310,7 +464,9 @@ def file_is_binary(file_path, chunk_size=1024, null_byte_threshold=0.1):
         return True
 
 
-# - - - - - - - - - - - - - - - - - OS Utils - - - - - - - - - - - - - - - - - #
+################################################################################
+### OS Utils
+################################################################################
 
 
 def os_tempfile(filename: str, check: bool = True):
@@ -413,7 +569,16 @@ def os_glob(
     return final_path
 
 
-# - - - - - - - - - - - - - - -  Other Utils - - - - - - - - - - - - - - - - - #
+def os_parent(path: str, levels_up: int = 1):
+    parent = os.path.dirname(path)
+    for i in range(levels_up - 1):
+        parent = os.path.dirname(parent)
+    return parent
+
+
+################################################################################
+### Misc
+################################################################################
 
 
 def zip_it(dst: str, src: str):
@@ -442,7 +607,9 @@ def emoji_str_len(text: str, ignore_newline=False):
     return width
 
 
-# - - - - - - - - - - - - - - - -  AWS Utils - - - - - - - - - - - - - - - - - #
+################################################################################
+### AWS
+################################################################################
 
 
 def aws_copy_file(filepath: str, aws_filepath: str, content_type: str | None = None):
@@ -495,7 +662,9 @@ def aws_auth(pem_filepath: str, key_filepath: str, trust_arn: str, profile_arn: 
     os.environ["AWS_SESSION_TOKEN"] = aws_auth["SessionToken"]
 
 
-# - - - - - - - - - - - - - - - - - Qt Utils - - - - - - - - - - - - - - - - - #
+################################################################################
+### Qt
+################################################################################
 
 
 class QtInfo:
@@ -534,7 +703,9 @@ class QtInfo:
             required_command(self.deployqt)
 
 
-# - - - - - - - - - - - - - - - - Entrypoint - - - - - - - - - - - - - - - - - #
+################################################################################
+### Entrypoint
+################################################################################
 
 
 def entrypoint(main: Callable, *args):
@@ -559,7 +730,9 @@ def entrypoint(main: Callable, *args):
         error_exit("Unexpected", e)
 
 
-# - - - - - - - - - - - - - - - - -  Setup - - - - - - - - - - - - - - - - - - #
+################################################################################
+### Setup
+################################################################################
 
 
 def _init1():

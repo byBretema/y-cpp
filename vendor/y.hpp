@@ -155,37 +155,37 @@ y_info/warn...
 
 // Flow
 
-#define y_or_return(cond, ret_val)                                                                 \
-    if (!(cond)) {                                                                                 \
-        return (ret_val);                                                                          \
+#define y_or_return(cond, ret_val)                                                                                     \
+    if (!(cond)) {                                                                                                     \
+        return (ret_val);                                                                                              \
     }
 
 // Class helpers
 
-#define y_class_nocopy(T)                                                                          \
-public:                                                                                            \
-    T(T const &) = delete;                                                                         \
+#define y_class_nocopy(T)                                                                                              \
+public:                                                                                                                \
+    T(T const &) = delete;                                                                                             \
     T &operator=(T const &) = delete;
 
-#define y_class_nomove(T)                                                                          \
-public:                                                                                            \
-    T(T &&) noexcept = delete;                                                                     \
+#define y_class_nomove(T)                                                                                              \
+public:                                                                                                                \
+    T(T &&) noexcept = delete;                                                                                         \
     T &operator=(T &&) noexcept = delete;
 
 #define y_class_nocopynomove(T) y_class_nocopy(T) y_class_nomove(T)
 
-#define y_class_move(T, move_code)                                                                 \
-public:                                                                                            \
-    T(T &&rhs_) noexcept { *this = std::move(rhs_); }                                              \
-    T &operator=(T &&rhs_) noexcept {                                                              \
-        swap(*this, rhs_);                                                                         \
-        return *this;                                                                              \
-    }                                                                                              \
-    friend void swap(T &lhs, T &rhs) noexcept {                                                    \
-        if (&lhs == &rhs)                                                                          \
-            return;                                                                                \
-        using std::swap;                                                                           \
-        (move_code);                                                                               \
+#define y_class_move(T, move_code)                                                                                     \
+public:                                                                                                                \
+    T(T &&rhs_) noexcept { *this = std::move(rhs_); }                                                                  \
+    T &operator=(T &&rhs_) noexcept {                                                                                  \
+        swap(*this, rhs_);                                                                                             \
+        return *this;                                                                                                  \
+    }                                                                                                                  \
+    friend void swap(T &lhs, T &rhs) noexcept {                                                                        \
+        if (&lhs == &rhs)                                                                                              \
+            return;                                                                                                    \
+        using std::swap;                                                                                               \
+        (move_code);                                                                                                   \
     }
 
 // Concat
@@ -200,64 +200,6 @@ public:                                                                         
 
 #define y_defer(x) y::Defer __yConcat(y_defer_r_, __LINE__) { [&] { x; } };
 #define y_deferc(x) y::Defer __yConcat(y_defer_c_, __LINE__) { [=] { x; } };
-
-// Enum
-
-// clang-format off
-#define __yFE1(WHAT, X)     WHAT(X)
-#define __yFE2(WHAT, X, ...) WHAT(X) __yFE1(WHAT, __VA_ARGS__)
-#define __yFE3(WHAT, X, ...) WHAT(X) __yFE2(WHAT, __VA_ARGS__)
-#define __yFE4(WHAT, X, ...) WHAT(X) __yFE3(WHAT, __VA_ARGS__)
-#define __yFE5(WHAT, X, ...) WHAT(X) __yFE4(WHAT, __VA_ARGS__)
-#define __yFE6(WHAT, X, ...) WHAT(X) __yFE5(WHAT, __VA_ARGS__)
-#define __yFE7(WHAT, X, ...) WHAT(X) __yFE6(WHAT, __VA_ARGS__)
-#define __yFE8(WHAT, X, ...) WHAT(X) __yFE7(WHAT, __VA_ARGS__)
-#define __yFE9(WHAT, X, ...) WHAT(X) __yFE8(WHAT, __VA_ARGS__)
-#define __yFE10(WHAT, X, ...) WHAT(X) __yFE9(WHAT, __VA_ARGS__)
-
-#define __yGetMacro(_1,_2,_3,_4,_5,_6,_7,_8,_9,_10,NAME,...) NAME
-#define __yForEach(action, ...) __yGetMacro(__VA_ARGS__, __yFE10, __yFE9, __yFE8, __yFE7, __yFE6, __yFE5, __yFE4, __yFE3, __yFE2, __yFE1)(action, __VA_ARGS__)
-
-#define __yEnumDef(entry)         entry,
-#define __yEnumQualified(entry)   T::entry,
-#define __yEnumCase(entry)        case T::entry: return #entry;
-#define __yEnumFromStr(entry) if (name == #entry) return T::entry;
-
-#define y_make_enum(EnumType, UType, ...)                                                          \
-    /* Enum Definition */                                                                          \
-    enum struct EnumType : UType { None, __yForEach(__yEnumDef, __VA_ARGS__) };                    \
-    /* List all Values */                                                                          \
-    inline std::vector<EnumType> e_##EnumType##All() {                                             \
-        using T = EnumType;                                                                        \
-        return { T::None, __yForEach(__yEnumQualified, __VA_ARGS__) };                             \
-    }                                                                                              \
-    /* To Index */                                                                                 \
-    inline UType e_##EnumType##ToIndex(EnumType value) { return static_cast<UType>(value); }     \
-    /* To String */                                                                                \
-    inline std::string e_##EnumType##ToString(EnumType value) {                                    \
-        using T = EnumType;                                                                        \
-        switch (value) {                                                                           \
-            case T::None: return "None";                                                           \
-            __yForEach(__yEnumCase, __VA_ARGS__)                                                   \
-        }                                                                                          \
-        return "None";                                                                             \
-    }                                                                                              \
-    /* From String */                                                                              \
-    inline EnumType e_##EnumType##FromString(std::string const &name) {                            \
-        using T = EnumType;                                                                        \
-        __yForEach(__yEnumFromStr, __VA_ARGS__) return T::None;                                    \
-        return T::None;                                                                            \
-    }                                                                                              \
-    /* List Names */                                                                               \
-    inline std::vector<std::string> e_##EnumType##Names() {                                        \
-        std::vector<std::string> names;                                                            \
-        for (auto v : e_##EnumType##All())                                                         \
-            names.push_back(e_##EnumType##ToString(v));                                            \
-        return names;                                                                              \
-    }\
-    struct __e_##EnumType##_terminator
-// clang-format on
-
 
 #endif
 
@@ -509,19 +451,15 @@ struct std::formatter<T> {
         int const f = 2; // Amount of decimals  // TODO : Set this as setting field
         if constexpr (std::is_same_v<T, y::Vec2>)
             return std::format_to(ctx.out(), "Vec2({:.{}f}, {:.{}f})", v.x, f, v.y, f);
-        else if constexpr (std::is_same_v<T, y::Vec3>)
-            return std::format_to(ctx.out(), "Vec3({:.{}f}, {:.{}f}, {:.{}f})", v.x, f, v.y, f, v.z,
-                                  f);
-        else if constexpr (std::is_same_v<T, y::Vec4>)
-            return std::format_to(ctx.out(), "Vec4({:.{}f}, {:.{}f}, {:.{}f})", v.x, f, v.y, f, v.z,
-                                  f, v.w, f);
-        else
-            return std::format_to(ctx.out(), "Vec?()");
+        if constexpr (std::is_same_v<T, y::Vec3>)
+            return std::format_to(ctx.out(), "Vec3({:.{}f}, {:.{}f}, {:.{}f})", v.x, f, v.y, f, v.z, f);
+        if constexpr (std::is_same_v<T, y::Vec4>)
+            return std::format_to(ctx.out(), "Vec4({:.{}f}, {:.{}f}, {:.{}f})", v.x, f, v.y, f, v.z, f, v.w, f);
+        return std::format_to(ctx.out(), "Vec?()");
     }
 };
 
 #endif
-
 #endif
 
 
@@ -648,9 +586,7 @@ private:
 
 template <typename F, typename T>
 auto bind(F &&fn, T *obj) {
-    return [obj, fn](auto &&...args) -> decltype(auto) {
-        return (obj->*fn)(std::forward<decltype(args)>(args)...);
-    };
+    return [obj, fn](auto &&...args) -> decltype(auto) { return (obj->*fn)(std::forward<decltype(args)>(args)...); };
 }
 
 [[nodiscard]] constexpr inline usize bit(usize n) { return (1 << n); }
@@ -777,9 +713,7 @@ using ETimer = ElapsedTimer;
     return str;
 }
 
-[[nodiscard]] inline b8 str_contains(StrView str, StrView substr) {
-    return str.find(substr) != std::string::npos;
-}
+[[nodiscard]] inline b8 str_contains(StrView str, StrView substr) { return str.find(substr) != std::string::npos; }
 
 [[nodiscard]] Vec<Str> str_split(StrView str, StrView delim) {
     if (delim.empty()) {
@@ -816,8 +750,7 @@ using ETimer = ElapsedTimer;
     return s;
 }
 
-[[nodiscard]] Str str_replace(Str str, Str const &from, Str const &to,
-                              b8 only_first_match = false) {
+[[nodiscard]] Str str_replace(Str str, Str const &from, Str const &to, b8 only_first_match = false) {
     usize pos = 0;
     while ((pos = str.find(from)) < str.size()) {
         str.replace(pos, from.length(), to);
@@ -828,8 +761,7 @@ using ETimer = ElapsedTimer;
     return str;
 }
 
-[[nodiscard]] Str str_replace_many(Str str, Vec<Str> const &from, Vec<Str> const &to,
-                                   b8 sorted = false) {
+[[nodiscard]] Str str_replace_many(Str str, Vec<Str> const &from, Vec<Str> const &to, b8 sorted = false) {
     b8 const same_size = from.size() == to.size();
     b8 const is_empty = same_size && from.size() < 1;
     if (!same_size || is_empty) {
@@ -859,17 +791,11 @@ using ETimer = ElapsedTimer;
     return str.substr(from, to);
 }
 
-[[nodiscard]] inline Str str_cut(Str const &str, usize count) {
-    return str_slice(str, count, str.size() - count * 2);
-}
+[[nodiscard]] inline Str str_cut(Str const &str, usize count) { return str_slice(str, count, str.size() - count * 2); }
 
-[[nodiscard]] inline Str str_cut_l(Str const &str, usize count) {
-    return str_slice(str, count, str.size());
-}
+[[nodiscard]] inline Str str_cut_l(Str const &str, usize count) { return str_slice(str, count, str.size()); }
 
-[[nodiscard]] inline Str str_cut_r(Str const &str, usize count) {
-    return str_slice(str, 0, str.size() - count);
-}
+[[nodiscard]] inline Str str_cut_r(Str const &str, usize count) { return str_slice(str, 0, str.size() - count); }
 
 [[nodiscard]] inline Str str_trim_l(Str str, Str const &individual_chars_to_remove = " \n\r\t") {
     return str.erase(0, str.find_first_not_of(individual_chars_to_remove));
@@ -910,8 +836,7 @@ using ETimer = ElapsedTimer;
     return content;
 }
 
-b8 file_write(Str const &output_file, char const *data, usize data_size,
-              std::ios_base::openmode mode) {
+b8 file_write(Str const &output_file, char const *data, usize data_size, std::ios_base::openmode mode) {
 
     if (!data || data_size < 1) {
         y_err("[file_write] Invalid data: {}", output_file);
