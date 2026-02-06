@@ -44,6 +44,9 @@ set(FETCHCONTENT_BASE_DIR ${CMAKE_SOURCE_DIR}/build/deps)
 # Global Variable w/ lib names
 set(y_meta_libs "" CACHE INTERNAL "")
 
+# Global Variable w/ lib names
+set(y_meta_tests "" CACHE INTERNAL "")
+
 set(__y_sep "❱---------------------------------------------------------------------------❰" CACHE INTERNAL "")
 
 
@@ -304,6 +307,10 @@ function(y_enable_tests)
         add_test(NAME "${_name}" COMMAND "${_name}")
 
         message(STATUS "[y] · Test : ${_name} -- ${_source}")
+
+        set(_tests_aux "${y_meta_tests} ${_name}")
+        string(STRIP ${_tests_aux} _tests_clean)
+        set(y_meta_tests "${_tests_clean}" CACHE INTERNAL "")
 
     endforeach()
     message("")

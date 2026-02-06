@@ -4,6 +4,7 @@ import os
 import shutil
 import argparse
 import re
+from collections import defaultdict
 
 import vendor.y as y
 
@@ -14,7 +15,10 @@ import vendor.y as y
 BUILD_DIR: str = "build"
 TESTS_DIR: str = "tests"
 
-CMAKE_DEPS: str = "y_meta_libs"
+Y_LIBS: str = "y_meta_libs"
+Y_TESTS: str = "y_meta_tests"
+
+CMAKE_TO_IGNORE = {"clean", "help", "rebuild_cache", "edit_cache", "package", "package_source", "build.ninja"}
 
 
 ################################################################################
@@ -22,48 +26,67 @@ CMAKE_DEPS: str = "y_meta_libs"
 ################################################################################
 
 
-def cmake_user_targets(cwd: str) -> list[str]:
+class CMakeTargets:
+    def __init__(self) -> None:
+        self.binaries = list()
+        self.tests = list()
+
+    def contains(self, target_name: str):
+        return target_name in (self.binaries + self.tests)
+
+
+def cmake_user_targets(cwd: str) -> CMakeTargets:
     p: y.RunCmdInfo = y.run_cmd(
         ["cmake", "--build", cwd, "--target", "help"],
         verbosity=0,
         permissive=True,
     )
     if p.returncode:
-        return []
+        return CMakeTargets()
 
     # Extract y.cmake dependencies from CMake cache
     cache_file = os.path.join(cwd, "CMakeCache.txt")
-    deps: set[str] = set()
+    libs: set[str] = set()
+    tests: set[str] = set()
 
     if not os.path.exists(cache_file):
-        return []
+        return CMakeTargets()
 
+    # Extract libs
     with open(cache_file, "r") as f:
-        match = re.search(f"{CMAKE_DEPS}:(.*)=(.+)", f.read(), re.IGNORECASE)
-        deps = {lib for lib in match.group(2).strip().split(" ")} if match else set()
+        match = re.search(f"{Y_LIBS}:(.*)=(.+)", f.read(), re.IGNORECASE)
+        libs = {lib for lib in match.group(2).strip().split(" ")} if match else set()
 
-    targets: list[str] = []
-    meta_targets = {"clean", "help", "rebuild_cache", "edit_cache", "package", "package_source", "build.ninja"}
+    # Extract tests
+    with open(cache_file, "r") as f:
+        match = re.search(f"{Y_TESTS}:(.*)=(.+)", f.read(), re.IGNORECASE)
+        tests = {test for test in match.group(2).strip().split(" ")} if match else set()
+
+    targets = CMakeTargets()
     for line in p.stdout.splitlines():
+
+        # Validate entry
         if ":" not in line:
             continue
-
         name, _ = line.split(":", 1)
         name = name.strip()
-
-        if name in targets:
+        if targets.contains(name):
             continue
 
         # Skip meta-targets
-        if not name or "/" in name or name in meta_targets:
+        if not name or "/" in name or name in CMAKE_TO_IGNORE:
             continue
 
         # Skip y.cmake dependencies
         name_lower = name.lower()
-        if any(dep.lower() in name_lower or name_lower in dep.lower() for dep in deps):
+        if any(lib.lower() in name_lower or name_lower in lib.lower() for lib in libs):
             continue
 
-        targets.append(name)
+        # Append to list and decorate for tests
+        if name in tests:
+            targets.tests.append(name)
+        else:
+            targets.binaries.append(name)
 
     return targets
 
@@ -95,22 +118,9 @@ def config(cwd: str, build_type: str, generator: str, build_tests: bool):
 ################################################################################
 
 
-def build(cwd: str, build_type: str, interactive: bool):
-
+def build(cwd: str, build_type: str, target_name: str = "all"):
     y.print_header("BUILD")
-
-    target = []
-    if interactive:
-        options = ["all", *cmake_user_targets(cwd)]
-        choice = y.menu(options, "Choose target to build", prompt="Build", starts_at=0)
-
-        if not choice:
-            y.error_exit("Invalid target to build")
-
-        target = ["--target", choice]
-
-        return
-
+    target = ["--target", target_name]
     y.run_cmd(["cmake", "--build", ".", "-j", str(os.cpu_count()), "--config", build_type, *target], cwd=cwd)
 
 
@@ -229,13 +239,27 @@ def main():
         shutil.rmtree(sub_build_dir)
     os.makedirs(sub_build_dir, exist_ok=True)
 
-    #! Cmake / Tests
+    #! Config
+
+    build_tests = (args.command == "test")
+    config(sub_build_dir, build_type, generator, build_tests=build_tests)
+
+    #! Interactive layer
+
+    user_choice = "all"
+    if args.interactive:
+        targets = cmake_user_targets(sub_build_dir)
+        targets = targets.binaries if not build_tests else targets.tests
+        options = ["all", *targets]
+        user_choice = y.menu(options, "Choose target to build", prompt="Build", starts_at=0)
+        if not user_choice:
+            y.error_exit("Invalid target to build")
 
     if args.command == "build" or args.command == "test":
-        config(sub_build_dir, build_type, generator, build_tests=args.tests)
+        build(sub_build_dir, build_type, target_name=user_choice)
 
-    if args.command == "build":
-        build(sub_build_dir, build_type, args.interactive)
+    # if args.command == "run":
+        # run()
 
     if args.command == "test":
         tests()
