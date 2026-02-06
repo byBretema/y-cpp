@@ -31,7 +31,7 @@ class CMakeTargets:
         self.binaries = list()
         self.tests = list()
 
-    def contains(self, target_name: str):
+    def contains(self, target_name: str) -> bool:
         return target_name in (self.binaries + self.tests)
 
 
@@ -91,6 +91,14 @@ def cmake_user_targets(cwd: str) -> CMakeTargets:
     return targets
 
 
+def norm_target_name(target_name: str) -> list[str]:
+    to_print = f" : {target_name}"
+    if not target_name or target_name == "all":
+        target_name = ""
+        to_print = ""
+    return [target_name, to_print]
+
+
 ################################################################################
 ### Config
 ################################################################################
@@ -125,24 +133,76 @@ def build(cwd: str, build_type: str, target_name: str = "all"):
 
 
 ################################################################################
+### Run
+################################################################################
+
+
+def run(target_name: str = "all"):
+    target_name, target_name_print = norm_target_name(target_name)
+    y.print_header(f"RUNNING{target_name_print}", post="")
+
+    bin_dir: str = os.path.abspath(f"{BUILD_DIR}/bin")
+    y.required_folder(bin_dir, info="Bin not executed.")
+
+    for root, dirs, files in os.walk(bin_dir):
+        for dirname in dirs:
+            if target_name and dirname != target_name:
+                continue
+            for sub_root, _, files in os.walk(f"{root}/{dirname}"):
+                for filename in files:
+                    filepath: str = f"{sub_root}/{filename}"
+
+                    if not y.file_is_binary(filepath):
+                        continue
+
+                    y.println()
+
+                    p: y.RunCmdInfo = y.run_cmd(
+                        [filepath],
+                        verbosity=0,
+                        permissive=True,
+                        external=True,
+                    )
+
+                    ok: bool = not p.returncode
+                    status: str = "🟢" if ok else "🔴"
+
+                    with y.temp_width(60):
+                        y.println(f"┌── • {filename.upper()} •")
+
+                        if p.stdout:
+                            # ... Raw to file
+                            with open(f"{sub_root}/log__{filename}.txt", "w") as file:
+                                file.write(p.stdout)
+                            # ... Beautify to console
+                            y.println("│  ")
+                            for line in p.stdout.strip("\n").split("\n"):
+                                y.println(f"│  {line}")
+
+                        y.println("│  ")
+                        y.print_fill("└{s}▸ {m}" "\n", "─", m=status)
+
+
+################################################################################
 ### Tests
 ################################################################################
 
 
-def tests():
-    y.print_header("TESTs", post="")
+def tests(target_name: str = "all"):
+    target_name, target_name_print = norm_target_name(target_name)
+    y.print_header(f"TESTING{target_name_print}", post="")
 
     tests_dir: str = os.path.abspath(f"{BUILD_DIR}/tests")
-
-    if not os.path.isdir(tests_dir):
-        y.log_error(f"Dir '{tests_dir}' not found. Tests not executed.")
+    y.required_folder(tests_dir, info="Test(s) not executed.")
 
     tests_total: int = 0
     tests_passed: int = 0
 
     for root, _, files in os.walk(tests_dir):
         for filename in files:
-            filepath: str = os.path.join(root, filename)
+            if target_name and filename != target_name:
+                continue
+            filepath: str = f"{root}/{filename}"
 
             if not y.file_is_binary(filepath):
                 continue
@@ -195,25 +255,33 @@ def main():
 
     #! Args
 
-    parser = argparse.ArgumentParser(description="Build script")
+    parser = argparse.ArgumentParser(description="y-cpp project manager companion")
+    subparsers = parser.add_subparsers(dest="command", required=True)
+    parser.suggest_on_error = True
 
     # Common options
-    parser.add_argument("-c", "--clean", action="store_true", help="Cleanup sub-build directory")
-    parser.add_argument("-f", "--fresh", action="store_true", help="Cleanup build directory")
+    parser.add_argument("-c", "--clean", action="store_true", help="Cleanup projects/tests from build dir")
+    parser.add_argument("-f", "--fresh", action="store_true", help="Cleanup whole build dir")
     parser.add_argument("-d", "--debug", action="store_true", help="Build in Debug mode")
     parser.add_argument("-g", "--generator", type=str, default="Ninja", help="CMake generator")
 
-    subparsers = parser.add_subparsers(dest="command", required=True)
-
-    # build subparser
-    build_parser = subparsers.add_parser("build", help="Run config/build step")
-    build_parser.add_argument("-t", "--tests", action="store_true", help="Build project tests")
+    # Command: build
+    build_parser = subparsers.add_parser("build", help="Config + Build a target")
     build_parser.add_argument("-i", "--interactive", action="store_true", help="Let you choose what to build")
 
-    # test subparser
-    test_parser = subparsers.add_parser("test", help="Run project tests")
-    # no extra flags for now, but kept for symmetry / future use
+    # Command: test
+    test_parser = subparsers.add_parser("test", help="Run test(s)")
+    test_parser.add_argument("-i", "--interactive", action="store_true", help="Let you choose what to test")
 
+    # Command: run
+    run_parser = subparsers.add_parser("run", help="Run a project")
+    run_parser.add_argument("-i", "--interactive", action="store_true", help="Let you choose what to run")
+
+    # Command: add
+    add_parser = subparsers.add_parser("add", help="Add a project")
+    add_parser.add_argument("project_name", type=str, help="Project name")
+
+    # Parse args
     args = parser.parse_args()
 
     #! Vars
@@ -239,30 +307,45 @@ def main():
         shutil.rmtree(sub_build_dir)
     os.makedirs(sub_build_dir, exist_ok=True)
 
+    #! Add
+
+    # if args.command == "add":
+    #     add()
+    #     return
+
+    #! Valid command ?
+
+    if not args.command in ["build", "test", "run"]:
+        return
+
     #! Config
 
-    build_tests = (args.command == "test")
+    build_tests = args.command == "test"
     config(sub_build_dir, build_type, generator, build_tests=build_tests)
 
     #! Interactive layer
 
     user_choice = "all"
+
+    targets = cmake_user_targets(sub_build_dir)
+    targets = targets.tests if build_tests else targets.binaries
+
     if args.interactive:
-        targets = cmake_user_targets(sub_build_dir)
-        targets = targets.binaries if not build_tests else targets.tests
-        options = ["all", *targets]
-        user_choice = y.menu(options, "Choose target to build", prompt="Build", starts_at=0)
+        options = ["all", *targets] if build_tests else targets
+        target_type = "test" if build_tests else "bin"
+        user_choice = y.menu(options, f"Choose a {target_type} target to build", prompt="Build", starts_at=0)
         if not user_choice:
             y.error_exit("Invalid target to build")
 
-    if args.command == "build" or args.command == "test":
-        build(sub_build_dir, build_type, target_name=user_choice)
+    #! Build and Run
 
-    # if args.command == "run":
-        # run()
+    build(sub_build_dir, build_type, target_name=user_choice)
+
+    if args.command == "run":
+        run(target_name=user_choice)
 
     if args.command == "test":
-        tests()
+        tests(target_name=user_choice)
 
 
 ################################################################################
