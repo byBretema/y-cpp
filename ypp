@@ -26,7 +26,7 @@ CMAKE_TO_IGNORE = {"clean", "help", "rebuild_cache", "edit_cache", "package", "p
 ################################################################################
 
 
-class CMakeTargets:
+class CMakeUserTargets:
     def __init__(self) -> None:
         self.binaries = list()
         self.tests = list()
@@ -35,14 +35,14 @@ class CMakeTargets:
         return target_name in (self.binaries + self.tests)
 
 
-def cmake_user_targets(cwd: str) -> CMakeTargets:
+def cmake_user_targets(cwd: str) -> CMakeUserTargets:
     p: y.RunCmdInfo = y.run_cmd(
         ["cmake", "--build", cwd, "--target", "help"],
         verbosity=0,
         permissive=True,
     )
     if p.returncode:
-        return CMakeTargets()
+        return CMakeUserTargets()
 
     # Extract y.cmake dependencies from CMake cache
     cache_file = os.path.join(cwd, "CMakeCache.txt")
@@ -50,7 +50,7 @@ def cmake_user_targets(cwd: str) -> CMakeTargets:
     tests: set[str] = set()
 
     if not os.path.exists(cache_file):
-        return CMakeTargets()
+        return CMakeUserTargets()
 
     # Extract libs
     with open(cache_file, "r") as f:
@@ -62,7 +62,7 @@ def cmake_user_targets(cwd: str) -> CMakeTargets:
         match = re.search(f"{Y_TESTS}:(.*)=(.+)", f.read(), re.IGNORECASE)
         tests = {test for test in match.group(2).strip().split(" ")} if match else set()
 
-    targets = CMakeTargets()
+    targets = CMakeUserTargets()
     for line in p.stdout.splitlines():
 
         # Validate entry
