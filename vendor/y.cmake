@@ -289,7 +289,6 @@ function(y_enable_tests)
         return()
     endif()
 
-
     message(STATUS "[y] · Enabling tests")
 
     enable_testing()

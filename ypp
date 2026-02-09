@@ -26,10 +26,83 @@ CMAKE_TO_IGNORE = {"clean", "help", "rebuild_cache", "edit_cache", "package", "p
 ################################################################################
 
 
+def run_silent(bin_path):
+    return y.run_cmd([bin_path], verbosity=0, permissive=True, external=True)
+
+
+class ExecStats:
+    def __init__(self) -> None:
+        self.total = 0
+        self.passed = 0
+
+
+def iter_bin_dir(
+    bin_dir,
+    ok_str="",
+    fail_str="",
+    dir_filter="",
+    reverse_dir_filter=set(),
+    file_filter="",
+    reverse_file_filter=set(),
+):
+
+    stats = ExecStats()
+
+    for root, dirs, files in os.walk(bin_dir):
+        rel_path = os.path.relpath(root, bin_dir)
+
+        if dir_filter and not rel_path.startswith(dir_filter):
+            dirs[:] = []
+            continue
+
+        dirs[:] = [d for d in dirs if d not in reverse_dir_filter]
+
+        for filename in files:
+
+            if file_filter and filename != file_filter:
+                continue
+
+            if filename in reverse_file_filter:
+                continue
+
+            bin_path: str = f"{root}/{filename}"
+
+            if not y.file_is_binary(bin_path):
+                continue
+
+            stats.total += 1
+
+            p: y.RunCmdInfo = run_silent(bin_path)
+            ok: bool = not p.returncode
+            status: str = ok_str if ok else fail_str
+
+            with y.temp_width(60):
+                y.println(f"\n┌── • {filename} •")
+
+                if p.stdout:
+                    # ... Raw to file
+                    with open(f"{root}/log__{filename}.txt", "w") as file:
+                        file.write(p.stdout)
+                    # ... Beautify to console
+                    y.println("│  ")
+                    for line in p.stdout.strip("\n").split("\n"):
+                        y.println(f"│  {line}")
+
+                y.println("│  ")
+                y.print_fill("└{s}▸ {m}" "\n", "─", m=status)
+
+            stats.passed += int(ok)
+
+    return stats
+
+
 class CMakeUserTargets:
     def __init__(self) -> None:
         self.binaries = list()
         self.tests = list()
+
+    def all(self):
+        return self.binaries + self.tests
 
     def contains(self, target_name: str) -> bool:
         return target_name in (self.binaries + self.tests)
@@ -126,10 +199,23 @@ def config(cwd: str, build_type: str, generator: str, build_tests: bool):
 ################################################################################
 
 
-def build(cwd: str, build_type: str, target_name: str = "all"):
-    y.print_header("BUILD")
-    target = ["--target", target_name]
-    y.run_cmd(["cmake", "--build", ".", "-j", str(os.cpu_count()), "--config", build_type, *target], cwd=cwd)
+def build(targets: set, cwd: str, build_type: str, target_name: str = "all", ignore_set=set()):
+    y.print_header("BUILD", post="")
+
+    target_name, _ = norm_target_name(target_name)
+
+    cmake_build_cmd = ["cmake", "--build", ".", "-j", str(os.cpu_count()), "--config", build_type]
+
+    if not target_name and not ignore_set:
+        y.run_cmd(cmake_build_cmd, cwd=cwd, pre="\n")
+        return
+
+    for target in targets:
+        if target_name and target != target_name:
+            continue
+        if target in ignore_set:
+            continue
+        y.run_cmd([*cmake_build_cmd, "--target", target], cwd=cwd, pre="\n")
 
 
 ################################################################################
@@ -137,50 +223,20 @@ def build(cwd: str, build_type: str, target_name: str = "all"):
 ################################################################################
 
 
-def run(target_name: str = "all"):
+def run(target_name: str = "all", reverse_file_filter=set()):
     target_name, target_name_print = norm_target_name(target_name)
     y.print_header(f"RUNNING{target_name_print}", post="")
 
-    bin_dir: str = os.path.abspath(f"{BUILD_DIR}/bin")
-    y.required_folder(bin_dir, info="Bin not executed.")
+    bins_dir: str = os.path.abspath(f"{BUILD_DIR}/bin")
+    y.required_folder(bins_dir, info="Bin not executed.")
 
-    for root, dirs, files in os.walk(bin_dir):
-        for dirname in dirs:
-            if target_name and dirname != target_name:
-                continue
-            for sub_root, _, files in os.walk(f"{root}/{dirname}"):
-                for filename in files:
-                    filepath: str = f"{sub_root}/{filename}"
-
-                    if not y.file_is_binary(filepath):
-                        continue
-
-                    y.println()
-
-                    p: y.RunCmdInfo = y.run_cmd(
-                        [filepath],
-                        verbosity=0,
-                        permissive=True,
-                        external=True,
-                    )
-
-                    ok: bool = not p.returncode
-                    status: str = "🟢" if ok else "🔴"
-
-                    with y.temp_width(60):
-                        y.println(f"┌── • {filename.upper()} •")
-
-                        if p.stdout:
-                            # ... Raw to file
-                            with open(f"{sub_root}/log__{filename}.txt", "w") as file:
-                                file.write(p.stdout)
-                            # ... Beautify to console
-                            y.println("│  ")
-                            for line in p.stdout.strip("\n").split("\n"):
-                                y.println(f"│  {line}")
-
-                        y.println("│  ")
-                        y.print_fill("└{s}▸ {m}" "\n", "─", m=status)
+    iter_bin_dir(
+        bins_dir,
+        ok_str="🟢",
+        fail_str="🔴",
+        file_filter=target_name,
+        reverse_file_filter=reverse_file_filter,
+    )
 
 
 ################################################################################
@@ -188,58 +244,24 @@ def run(target_name: str = "all"):
 ################################################################################
 
 
-def tests(target_name: str = "all"):
+def tests(target_name: str = "all", reverse_file_filter=set()):
     target_name, target_name_print = norm_target_name(target_name)
     y.print_header(f"TESTING{target_name_print}", post="")
 
     tests_dir: str = os.path.abspath(f"{BUILD_DIR}/tests")
     y.required_folder(tests_dir, info="Test(s) not executed.")
 
-    tests_total: int = 0
-    tests_passed: int = 0
-
-    for root, _, files in os.walk(tests_dir):
-        for filename in files:
-            if target_name and filename != target_name:
-                continue
-            filepath: str = f"{root}/{filename}"
-
-            if not y.file_is_binary(filepath):
-                continue
-
-            y.println()
-
-            tests_total += 1
-            p: y.RunCmdInfo = y.run_cmd(
-                [filepath],
-                verbosity=0,
-                permissive=True,
-                external=True,
-            )
-            ok: bool = not p.returncode
-            status: str = "PASSED 🟢" if ok else "FAILED 🔴"
-
-            with y.temp_width(60):
-                y.println(f"┌── • {filename.upper()} •")
-
-                if p.stdout:
-                    # ... Raw to file
-                    with open(f"{root}/log__{filename}.txt", "w") as file:
-                        file.write(p.stdout)
-                    # ... Beautify to console
-                    y.println("│  ")
-                    for line in p.stdout.strip("\n").split("\n"):
-                        y.println(f"│  {line}")
-
-                y.println("│  ")
-                y.print_fill("└{s}▸ {m}" "\n", "─", m=status)
-
-                tests_passed += int(ok)
-
-    status: str = "PASS ✅️" if (tests_passed == tests_total) else "FAIL ⛔️"
+    stats = iter_bin_dir(
+        tests_dir,
+        ok_str="PASSED 🟢",
+        fail_str="FAILED 🔴",
+        file_filter=target_name,
+        reverse_file_filter=reverse_file_filter,
+    )
+    status: str = "PASS ✅️" if (stats.passed == stats.total) else "FAIL ⛔️"
 
     y.println()
-    y.log_info(f"Passed tests ({tests_passed}/{tests_total}) ❱ {status}")
+    y.log_info(f"Passed tests ({stats.passed}/{stats.total}) ❱ {status}")
 
 
 ################################################################################
@@ -268,14 +290,21 @@ def main():
     # Command: build
     build_parser = subparsers.add_parser("build", help="Config + Build a target")
     build_parser.add_argument("-i", "--interactive", action="store_true", help="Let you choose what to build")
+    build_parser.add_argument("-t", "--tests", action="store_true", help="Let you choose what to build")
+    build_parser.add_argument("--ignore", nargs="+", default=[], help="Targets to ignore")
+    build_parser.add_argument("target", nargs="?", default="all", help="Specific target (default: all)")
 
     # Command: test
     test_parser = subparsers.add_parser("test", help="Run test(s)")
     test_parser.add_argument("-i", "--interactive", action="store_true", help="Let you choose what to test")
+    test_parser.add_argument("--ignore", nargs="+", default=[], help="Targets to ignore")
+    test_parser.add_argument("target", nargs="?", default="all", help="Specific target (default: all)")
 
     # Command: run
     run_parser = subparsers.add_parser("run", help="Run a project")
     run_parser.add_argument("-i", "--interactive", action="store_true", help="Let you choose what to run")
+    run_parser.add_argument("--ignore", nargs="+", default=[], help="Targets to ignore")
+    run_parser.add_argument("target", nargs="?", default="all", help="Specific target (default: all)")
 
     # Command: add
     add_parser = subparsers.add_parser("add", help="Add a project")
@@ -283,6 +312,17 @@ def main():
 
     # Parse args
     args = parser.parse_args()
+
+    is_build = args.command == "build"
+    is_run = args.command == "run"
+
+    is_test = args.command == "test"
+    is_build_with_tests = args.command == "build" and args.tests
+    require_tests = is_test or is_build_with_tests
+
+    imply_compile = is_build or is_run or is_test
+
+    ignore_set = set(args.ignore) if imply_compile else set()
 
     #! Vars
 
@@ -315,37 +355,42 @@ def main():
 
     #! Valid command ?
 
-    if not args.command in ["build", "test", "run"]:
+    if not imply_compile:
         return
 
     #! Config
 
-    build_tests = args.command == "test"
-    config(sub_build_dir, build_type, generator, build_tests=build_tests)
+    config(sub_build_dir, build_type, generator, build_tests=require_tests)
 
     #! Interactive layer
 
-    user_choice = "all"
+    user_choice = args.target
 
     targets = cmake_user_targets(sub_build_dir)
-    targets = targets.tests if build_tests else targets.binaries
+
+    targets_all = targets.all()
+
+    if user_choice and user_choice != "all" and user_choice not in targets_all:
+        y.error_exit(f"Target '{user_choice}' not found", pre="")
+
+    targets = targets.tests if is_test else targets_all if is_build_with_tests else targets.binaries
+    target_type = "tests" if is_test else "test/bin" if is_build_with_tests else "bin"
 
     if args.interactive:
-        options = ["all", *targets] if build_tests else targets
-        target_type = "test" if build_tests else "bin"
+        options = ["all", *targets] if require_tests else targets
         user_choice = y.menu(options, f"Choose a {target_type} target to build", prompt="Build", starts_at=0)
         if not user_choice:
             y.error_exit("Invalid target to build")
 
     #! Build and Run
 
-    build(sub_build_dir, build_type, target_name=user_choice)
+    build(set(targets), sub_build_dir, build_type, user_choice, ignore_set)
 
     if args.command == "run":
-        run(target_name=user_choice)
+        run(user_choice, ignore_set)
 
     if args.command == "test":
-        tests(target_name=user_choice)
+        tests(user_choice, ignore_set)
 
 
 ################################################################################

@@ -88,10 +88,9 @@ def tee_make(
     return t
 
 
-def _log_error(message: str, exception=None) -> None | NoReturn:
-
+def _log_error(message: str, exception=None, pre="\n\n") -> None | NoReturn:
     exception_err = f" | {type(exception)}\n{str(exception)}" if exception else ""
-    err = f"\n\n@ ERROR | {message}{exception_err}\n"
+    err = f"{pre}@ ERROR | {message}{exception_err}\n"
 
     tee(err)
 
@@ -99,19 +98,21 @@ def _log_error(message: str, exception=None) -> None | NoReturn:
         EXIT_CB(err)
 
     if SHOW_TRACEBACK:
-        tee(f"\n{traceback.format_exc()}")
+        tb_str = traceback.format_exc()
+        if not "NoneType" in tb_str[:20]:
+            tee(f"\n{tb_str}")
 
     tee("")
 
 
-def error_exit(msg: str, exception=None) -> NoReturn:
-    _log_error(msg, exception)
+def error_exit(msg: str, exception=None, pre="") -> NoReturn:
+    println_fill("\n\n{s} FATAL {s}\n", sep=f"{BoxTheme.get(BoxStyle.Double).h}")
+    _log_error(msg, exception, pre)
     sys.exit(1)
 
 
-def log_error(msg: str, exception=None):
-    _log_error(msg, exception)
-    tee("- - - - - Execution will continue below - - - - -\n")
+def log_error(msg: str, exception=None, pre="\n\n"):
+    _log_error(msg, exception, pre)
 
 
 def log_info(msg: str, prefix="· ", ln="\n"):
@@ -202,7 +203,7 @@ def print_header(
 
     print(pre)
     print_fill("{tl}{s}{tr}" "\n", box.h, tl=box.tl, tr=box.tr)
-    print_fill("{ml} {s} {m} {s} {mr}" "\n", fill_char, m=(msg.upper()), ml=box.v, mr=box.v)
+    print_fill("{ml} {s} {m} {s} {mr}" "\n", fill_char, m=msg, ml=box.v, mr=box.v)
     print_fill("{bl}{s}{br}" "\n", box.h, bl=bl, br=box.br)
     print(post)
 
@@ -240,15 +241,23 @@ def run_cmd(
     verbosity: int = 2,
     permissive: bool = False,
     external: bool = False,
+    pre:str=""
 ) -> RunCmdInfo:
+
+    print(pre)
 
     cmd_str: str = " ".join(cmd)
     cmd_str += "" if not cwd else f"  (at {cwd})"
     if verbosity > 0:
         log_info(cmd_str, prefix="@ ")
 
+    env = os.environ.copy()
+
     if external:  # TODO : Add a windows solution, 'stdbuf' is Linux only
-        cmd = ["stdbuf", "-oL"] + cmd
+        # env["PYTHONUNBUFFERED"] = "1"
+        pass
+        # cmd = ["stdbuf", "-oL"] + cmd
+
 
     process = subprocess.Popen(
         cmd,
@@ -258,7 +267,7 @@ def run_cmd(
         text=True,  # Decode output to strings
         bufsize=1,  # Line-buffered pipe reading
         cwd=cwd,  # Set folder where execute the command
-        env=os.environ.copy(),
+        env=env,
     )
 
     stdout: str = ""
