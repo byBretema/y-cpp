@@ -1,6 +1,7 @@
 # Output
 build/
 tests/output/
+.vscode/
 
 __pycache__
 
