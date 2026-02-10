@@ -241,7 +241,7 @@ def run_cmd(
     verbosity: int = 2,
     permissive: bool = False,
     external: bool = False,
-    pre:str=""
+    pre: str = "",
 ) -> RunCmdInfo:
 
     print(pre)
@@ -255,9 +255,8 @@ def run_cmd(
 
     if external:  # TODO : Add a windows solution, 'stdbuf' is Linux only
         # env["PYTHONUNBUFFERED"] = "1"
-        pass
         # cmd = ["stdbuf", "-oL"] + cmd
-
+        pass
 
     process = subprocess.Popen(
         cmd,
@@ -454,6 +453,15 @@ def script_path():
 
 
 ################################################################################
+### Dir Utils
+################################################################################
+
+def dir_rm(filepath: str|Path):
+    filepath = str(filepath)
+    if os.path.isdir(filepath):
+        shutil.rmtree(filepath)
+
+################################################################################
 ### File Utils
 ################################################################################
 
@@ -471,6 +479,34 @@ def file_is_binary(file_path, chunk_size=1024, null_byte_threshold=0.1):
     null_count = chunk.count(b"\x00")
     if null_count / len(chunk) > null_byte_threshold:
         return True
+
+
+def file_create(filepath: str | Path, check: bool = True):
+    try:
+        filepath = Path(filepath)
+        filepath.parent.mkdir(parents=True, exist_ok=True)
+        filepath.touch(exist_ok=True)
+        return str(filepath.absolute())
+    except Exception as e:
+        if check:
+            error_exit(f"Failed to create file: {e}")
+        return ""
+
+
+def file_write(filepath: str | Path, content: str, mode: str = "a"):
+    filepath = file_create(filepath)
+    if not filepath:
+        return False
+    with open(filepath, mode) as f:
+        f.write(content)
+        return True
+
+
+def file_read(filepath: str | Path, mode: str = "r"):
+    if not os.path.isfile(str(filepath)):
+        return ""
+    with open(filepath, mode) as f:
+        return f.read()
 
 
 ################################################################################

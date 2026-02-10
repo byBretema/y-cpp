@@ -12,8 +12,11 @@ import vendor.y as y
 ### Globals
 ################################################################################
 
-BUILD_DIR: str = "build"
 TESTS_DIR: str = "tests"
+BUILD_DIR: str = "build"
+SUB_BUILD_DIR: str = f"{y.script_path()}/{BUILD_DIR}/sub-build"
+
+SETTINGS_LAST_COMMAND: str = f"{BUILD_DIR}/.settings/last_command"
 
 Y_LIBS: str = "y_meta_libs"
 Y_TESTS: str = "y_meta_tests"
@@ -310,25 +313,26 @@ def main():
     add_parser = subparsers.add_parser("add", help="Add a project")
     add_parser.add_argument("project_name", type=str, help="Project name")
 
-    # Parse args
+    #! Parse args
+
     args = parser.parse_args()
 
-    is_build = args.command == "build"
-    is_run = args.command == "run"
+    command: str = args.command
 
-    is_test = args.command == "test"
-    is_build_with_tests = args.command == "build" and args.tests
+    is_build = command == "build"
+    is_run = command == "run"
+    is_test = command == "test"
+
+    is_build_with_tests = command == "build" and args.tests
     require_tests = is_test or is_build_with_tests
 
     imply_compile = is_build or is_run or is_test
 
     ignore_set = set(args.ignore) if imply_compile else set()
 
-    #! Vars
-
     build_type: str = "Release" if not args.debug else "Debug"
-    sub_build_dir: str = f"{y.script_path()}/{BUILD_DIR}/sub-build"
     generator: str = args.generator
+
 
     #! Required
 
@@ -339,17 +343,22 @@ def main():
 
     #! Cleanup
 
-    if args.fresh and os.path.isdir(BUILD_DIR):
-        shutil.rmtree(BUILD_DIR)
+    command_prev: str = y.file_read(SETTINGS_LAST_COMMAND)
+    command_change_requires_cleanup: bool = command != command_prev and imply_compile
+
+    if args.fresh:
+        y.dir_rm(BUILD_DIR)
     os.makedirs(BUILD_DIR, exist_ok=True)
 
-    if args.clean and os.path.isdir(sub_build_dir):
-        shutil.rmtree(sub_build_dir)
-    os.makedirs(sub_build_dir, exist_ok=True)
+    if (args.clean or command_change_requires_cleanup):
+        y.dir_rm(SUB_BUILD_DIR)
+    os.makedirs(SUB_BUILD_DIR, exist_ok=True)
+
+    y.file_write(SETTINGS_LAST_COMMAND, command, mode="w")
 
     #! Add
 
-    # if args.command == "add":
+    # if command == "add":
     #     add()
     #     return
 
@@ -360,13 +369,13 @@ def main():
 
     #! Config
 
-    config(sub_build_dir, build_type, generator, build_tests=require_tests)
+    config(SUB_BUILD_DIR, build_type, generator, build_tests=require_tests)
 
     #! Interactive layer
 
     user_choice = args.target
 
-    targets = cmake_user_targets(sub_build_dir)
+    targets = cmake_user_targets(SUB_BUILD_DIR)
 
     targets_all = targets.all()
 
@@ -384,12 +393,12 @@ def main():
 
     #! Build and Run
 
-    build(set(targets), sub_build_dir, build_type, user_choice, ignore_set)
+    build(set(targets), SUB_BUILD_DIR, build_type, user_choice, ignore_set)
 
-    if args.command == "run":
+    if is_run:
         run(user_choice, ignore_set)
 
-    if args.command == "test":
+    if is_test:
         tests(user_choice, ignore_set)
 
 
