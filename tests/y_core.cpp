@@ -1,11 +1,8 @@
 
-#define yyCustom_Fmt
-#define yyLib_Fmt
 #define yyEnable_Aliases
 #define yyEnable_Testing
+// #define yyDisable_LogFileAndLine
 #define yyLib_Glm
-// #define yyEnable_PrintFileAndLine
-#define yyDisable_LogFileAndLine
 #include <y.hpp>
 
 int main() {

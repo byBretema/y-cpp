@@ -23,14 +23,17 @@ Y_TESTS: str = "y_meta_tests"
 
 CMAKE_TO_IGNORE = {"clean", "help", "rebuild_cache", "edit_cache", "package", "package_source", "build.ninja"}
 
+EXE_CODE_DEFAULT = """#define yyEnable_Aliases
+#include <y.hpp>
+
+int main() {
+    y_println("{}", "Hello world!");
+}"""
+
 
 ################################################################################
 ### Utils
 ################################################################################
-
-
-def run_silent(bin_path):
-    return y.run_cmd([bin_path], verbosity=0, permissive=True, external=True)
 
 
 class ExecStats:
@@ -47,7 +50,7 @@ def iter_bin_dir(
     reverse_dir_filter=set(),
     file_filter="",
     reverse_file_filter=set(),
-):
+) -> ExecStats:
 
     stats = ExecStats()
 
@@ -75,7 +78,7 @@ def iter_bin_dir(
 
             stats.total += 1
 
-            p: y.RunCmdInfo = run_silent(bin_path)
+            p: y.RunCmdInfo = y.run_cmd([bin_path], verbosity=0, permissive=True, external=True)
             ok: bool = not p.returncode
             status: str = ok_str if ok else fail_str
 
@@ -173,6 +176,29 @@ def norm_target_name(target_name: str) -> list[str]:
         target_name = ""
         to_print = ""
     return [target_name, to_print]
+
+
+################################################################################
+### Add
+################################################################################
+
+
+def add(project_name: str, is_exe: bool = True):
+    dst_dir: str = f"{y.script_path()}/{project_name}"
+
+    os.makedirs(dst_dir, exist_ok=True)
+
+    # CMakeLists.txt
+    file = f"{dst_dir}/CMakeLists.txt"
+    if not os.path.isfile(file):
+        y.file_write(file, "cmake_minimum_required(VERSION ${TopCmakeMinVer})", mode="w")
+        is_exe_cmakebool = "ON" if is_exe else "OFF"
+        y.file_write(file, f"y_setup_exe_project({is_exe_cmakebool})", mode="a")
+
+    # Main.cpp
+    file = f"{dst_dir}/main.cpp"
+    if not os.path.isfile(file) and is_exe:
+        y.file_write(file, EXE_CODE_DEFAULT, mode="w")
 
 
 ################################################################################
@@ -333,7 +359,6 @@ def main():
     build_type: str = "Release" if not args.debug else "Debug"
     generator: str = args.generator
 
-
     #! Required
 
     y.required_command("cmake")
@@ -350,7 +375,7 @@ def main():
         y.dir_rm(BUILD_DIR)
     os.makedirs(BUILD_DIR, exist_ok=True)
 
-    if (args.clean or command_change_requires_cleanup):
+    if args.clean or command_change_requires_cleanup:
         y.dir_rm(SUB_BUILD_DIR)
     os.makedirs(SUB_BUILD_DIR, exist_ok=True)
 
@@ -358,11 +383,11 @@ def main():
 
     #! Add
 
-    # if command == "add":
-    #     add()
-    #     return
+    if command == "add":
+        add(args.project_name)
+        return
 
-    #! Valid command ?
+    #! Imply compile ??
 
     if not imply_compile:
         return

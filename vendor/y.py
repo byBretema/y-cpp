@@ -115,7 +115,10 @@ def log_error(msg: str, exception=None, pre="\n\n"):
     _log_error(msg, exception, pre)
 
 
-def log_info(msg: str, prefix="· ", ln="\n"):
+def log_warn(msg: str, prefix="W · ", ln="\n"):
+    tee(f"{prefix}{msg}{ln}")
+
+def log_info(msg: str, prefix=">> ", ln="\n"):
     tee(f"{prefix}{msg}{ln}")
 
 
@@ -493,12 +496,12 @@ def file_create(filepath: str | Path, check: bool = True):
         return ""
 
 
-def file_write(filepath: str | Path, content: str, mode: str = "a"):
+def file_write(filepath: str | Path, content: str, mode: str = "a", post:str="\n"):
     filepath = file_create(filepath)
     if not filepath:
         return False
     with open(filepath, mode) as f:
-        f.write(content)
+        f.write(f"{content}{post}")
         return True
 
 
