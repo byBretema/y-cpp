@@ -512,6 +512,15 @@ def file_read(filepath: str | Path, mode: str = "r"):
         return f.read()
 
 
+def file_symlink(src_dir: str, dst_dir: str, filename: str):
+    dst: Path = Path(f"{dst_dir}/{filename}")
+    dst.unlink(missing_ok=True)
+    try:
+        dst.symlink_to(Path(f"{src_dir}/{filename}"))
+    except Exception as e:
+        error_exit(f"Creating symlink from '{src_dir}/{filename}' to '{dst_dir}/{filename}'", e)
+
+
 ################################################################################
 ### OS Utils
 ################################################################################

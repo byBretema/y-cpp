@@ -217,10 +217,13 @@ def config(cwd: str, build_type: str, generator: str, build_tests: bool):
             "../..",
             f"-DCMAKE_BUILD_TYPE={build_type}",
             "-DCMAKE_POLICY_VERSION_MINIMUM=3.10",
+            "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
             f"-DY_BUILD_TESTS={"ON" if build_tests else "OFF"}",
         ],
         cwd=cwd,
     )
+
+    y.file_symlink(cwd, y.script_path(), "compile_commands.json")
 
 
 ################################################################################

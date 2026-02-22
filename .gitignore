@@ -2,8 +2,11 @@
 build/
 tests/output/
 .vscode/
-
 __pycache__
+
+compile_commands.json
+
+*_draft*
 
 # Prerequisites
 *.d
