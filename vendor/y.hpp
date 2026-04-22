@@ -354,7 +354,9 @@ template <typename T>
 using SpanConst = std::span<const T>;
 
 // Chrono
-using Clock = std::chrono::high_resolution_clock;
+// using Clock = std::chrono::high_resolution_clock;
+using Clock = std::chrono::steady_clock;
+using WallClock = std::chrono::system_clock;
 using TimePoint = Clock::time_point;
 
 } // namespace Alias_Stl
@@ -681,7 +683,7 @@ private:
 
 /// Returns current time formatted as `DD-MM-YYYY HH-MM-SS`
 Str inline time_stamp() {
-    auto const t = Clock::to_time_t(Clock::now());
+    auto const t = WallClock::to_time_t(WallClock::now());
     std::ostringstream oss;
     oss << std::put_time(std::localtime(&t), "%d-%m-%Y %H-%M-%S");
     return oss.str();
